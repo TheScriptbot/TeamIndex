@@ -16,7 +16,7 @@ Then, clone the git project and change directory into the project folder. From w
 Optionally:
 - Enable additional compressions:
     - `ENABLE_FASTPFOR=true`
-        - Note: We use tag `v0.3.0` from 
+        - Note: We use tag `v0.3.0`
 
 
 Note:
@@ -36,3 +36,5 @@ With pip:
 
 - Source the virtualenv or otherwise make sure the runtime python dependencies are ensured
 - Run the scripts
+
+

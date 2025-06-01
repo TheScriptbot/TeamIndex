@@ -12,3 +12,9 @@ To recreate figures follow the steps below to install required python packages f
   
     ./generate_figures.py
 
+## Prototype Code
+
+Not yet properly standalone/explained, should work, though!
+
+The code project can be found in the subfolder "code".
+See the respective README.md for further instructions.
