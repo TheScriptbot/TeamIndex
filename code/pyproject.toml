@@ -1,0 +1,35 @@
+[project]
+name = "TeamIndex"
+authors = [
+    {name = "Max Berens", email = "maximilian.berens@tu-dortmund.de"}
+]
+description = "An implementation of TeamIndices."
+requires-python = ">=3.6"
+readme = "README.md"
+dynamic = ["version"]
+
+dependencies = [
+  # "pyarrow",
+  # "pandas",
+  # "numpy",
+  # "matplotlib"
+]
+
+[build-system]
+requires = ["scikit-build-core", "pybind11"]
+build-backend = "scikit_build_core.build"
+
+[tool.scikit-build]
+cmake.build-type = "Debug"
+build-dir = "./build/_skbuild/{build_type}"
+wheel.packages = ["python/TeamIndex"]
+wheel.install-dir = "TeamIndex"
+metadata.version.provider = "scikit_build_core.metadata.setuptools_scm"
+
+[tool.setuptools_scm]
+version_file = "VERSION"
+version_file_template = "{version}"
+
+[tool.scikit-build.cmake.define]
+ENABLE_FASTPFOR = true
+CMAKE_POLICY_VERSION_MINIMUM = "3.5" # silence a warning in the Roaring dependency
