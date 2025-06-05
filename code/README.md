@@ -1,6 +1,28 @@
 # TeamIndex
 
+## Project Structure
+
+This is a C++ project with a python frontend that also contains various utilities, especially for creating indices and diagnosis. The project can be fully and conveniently installed using python pip. 
+
+Running the index creation requires the python frontend to provide necessary meta information, but there is an alternative (and separately compilable) standalone executable for running queries on existing indices. However, this standalone requires a json query specification that contains specifications for all I/O requests. These are cumbersome to write manually, so getting the python package running is advisable.
+
+
+
+### Important Files
+
+- Create index: 
+    - code/cpp/include/create/create.hpp
+    - There are other files that implement similar functionality, but they are not finished
+- Run queries:
+    - code/cpp/src/runtime/runtime.cpp (TeamIndexExecutor::run)
+    - Wrapping standalone: code/cpp/src/runtime/standalone_runtime.cpp
+- TeamIndex Python class that manages meta-data and request generation:
+    - code/python/TeamIndex/evaluation.py
+
+
 ## Install Code
+Linux only, not tested for systems other than ubuntu and archlinux.
+
 First:
 - Install mandatory dependency `liburing-dev` (ubuntu)
 - Optionally, install `pybind11`, `libzstd-dev` in your system
