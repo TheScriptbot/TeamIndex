@@ -197,7 +197,10 @@ def sample_unique_partitions(elements: List, sizes: Tuple[int], k: int, seed=Non
 
 
 
-def create_random_queries(query_count: int, pred_sel: float, bin_borders: dict):
+def create_random_queries(query_count: int, pred_sel: float, bin_borders: dict, rng: random.Random | None = None):
+    if rng is None:
+        rng = random.SystemRandom()
+        
     query_slice_list = list()
     grid_sizes = dict()
     hr_size = 1
@@ -215,15 +218,15 @@ def create_random_queries(query_count: int, pred_sel: float, bin_borders: dict):
         query_slice_list.append(slice(0, pred_bin_sel))
     
     total_size = math.prod(s for s in grid_sizes.values())
-    print(f"Hyperrectangle size in {len(columns)}-dim space:", hr_size,"bins vs.", )
-    print(f"Volume: {hr_size/total_size:.2%}")
+    print(f"Hyperrectangle size in {len(columns)}-dim space:", hr_size,"bins vs.", total_size)
+    print(f"Volume: ~{100*hr_size/total_size:.12%}")
     initial_query_slice_dict = {"-".join(columns): tuple(query_slice_list)}
     random_queries = list()
     for _ in range(query_count):
         
         random_query_slices = apply_translation_vector(initial_query_slice_dict,
                                                        compute_translation_vector(initial_query_slice_dict,
-                                                                                  grid_sizes))
+                                                                                  grid_sizes, rng))
         query_string = evaluation.slicer_to_conjunctive_query(list(random_query_slices.values())[0], columns, bin_borders)
 
         random_queries.append(query_string)

@@ -7,6 +7,8 @@ import json
 from pathlib import Path, PosixPath
 from typing import Optional, List
 
+from glob import glob
+
 import pyarrow as pa
 import pyarrow.parquet as pq
 
@@ -72,9 +74,10 @@ def find_matching_files(base_path: Path, pattern: str) -> list[Path]:
 def find_matching_dirs(root_path: Path, pattern: str) -> list[Path]:
     return [p for p in root_path.rglob(pattern) if p.is_dir()]
 
-def create_indices(target_path):
+def create_indices(target_path, file_glob="index_*.json"):
+    target_path = Path(target_path)
     
-    paths = find_matching_files(target_path, "index_*.json")
+    paths = find_matching_files(target_path, file_glob)
     for path in paths:
         print(f"Loading config from {path}")
         cfg = open_json(path)
@@ -278,8 +281,24 @@ def get_team_quantiles(team, cfg: dict, fill_value=np.nan):
             qvals[col].extend((b_max-len(qvals[col]))*[fill_value])
     return pd.DataFrame(qvals)
 
+def merge_data_frames(glob_pattern: str, columns: List[str]) -> pd.DataFrame:
+    """
+    Append all data frames for a specific set of columns into a single data frame.
+    """
+    
+    dfs = [pd.read_parquet(path, columns=columns) for path in glob(glob_pattern)]
+    
+    if len(dfs) == 0:
+        return pd.DataFrame()
 
-def index_table(cfg_or_file_path, table = None, do_not_dump: bool = True, overwrite_existing=False):
+    df = pd.concat(dfs, ignore_index=True)
+    df = df.reset_index(drop=True)
+    
+    print("Merged data frames into a single data frame with shape:", df.shape)
+    
+    return df
+
+def index_table(cfg_or_file_path, table = None, do_not_dump: bool = False, overwrite_existing=False):
     """
     Create a Team index from a table, i.e., a pandas DataFrame.
     If none is provided, we look for a path specified in "source_table" in the configuration.
@@ -366,11 +385,17 @@ def index_table(cfg_or_file_path, table = None, do_not_dump: bool = True, overwr
             assert "source_table" in cfg.keys(), "No table provided and no source_table in configuration!"
             source_table = cfg["source_table"]
             assert source_table is not None, "source_table is None!"
-            assert Path(source_table).exists(), f"\'{source_table}\' does not exist!"
-            print("\tLoading Team's table from", source_table)
-            team_data = pq.read_table(source_table, columns=list(team), memory_map=True).to_pandas().to_numpy(copy=False)
-
+            assert type(source_table) is str, "source_table must be a string!"
+            
+            if '*' in source_table:
+                print("\tLoading Team's tables from glob", source_table)
+                team_data = merge_data_frames(source_table, list(team)).to_numpy(copy=False)
+            else:
+                assert Path(source_table).exists(), f"\'{source_table}\' does not exist!"
+                print("\tLoading Team's table from", source_table)
+                team_data = pq.read_table(source_table, columns=list(team), memory_map=True).to_pandas().to_numpy(copy=False)
         else:
+            assert isinstance(table, pd.DataFrame), "table must be a pandas DataFrame!"
             team_data = table[list(team)].to_numpy(copy=False) # we hope the table has homogeneous data types, or this may become a copy...
         arr_fortran = np.asfortranarray(qvals.values)  # actually unnecessary but we'll try to be safe
         converter = BatchConverter(arr_fortran)

@@ -480,6 +480,9 @@ class TeamIndex(object):
         self.stats["compression_savings"] = dict()
         self.stats["total_padding"] = dict()
         self.stats["codec_usage"] = dict()
+        
+        # maximum number of bins across all dimensions, usually uniform. We determine this from the quantiles:
+        self.stats["b"] = max(len(q)-1 for q in self.quantiles.values())
 
         # C++ class, that will handle the query execution/index evaluation. Requires I/O requests as input
         # self.executor = TeamIndexExecutor()

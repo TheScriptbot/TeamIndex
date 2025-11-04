@@ -6,15 +6,25 @@
 To recreate figures follow the steps below to install required python packages for plotting inside a fresh virtual environment:
 
     python3 -m venv venv
-    source venv/bin/activate  # On Windows use: venv\Scripts\activate
+    source venv/bin/activate
   
     pip install matplotlib seaborn pandas numpy pyarrow
   
-    ./generate_figures.py
+    ./create_figures.py
+
+The script then renders plots using the existing measurements stored in `./data`.
 
 ## Prototype Code
 
-Not yet properly standalone/explained, should work, though!
+Note: code and scripts developed and tested on archlinux.
 
-The code project can be found in the subfolder "code".
-See the respective README.md for further instructions.
+To run code for creating and evaluating indices using a small and simple uniform dataset:
+
+    source venv/bin/activate
+    pip install code/
+
+    cd minimal_example
+    python -i minimal_example/run_example.py
+
+
+The program code can be found in the subfolder "code".
