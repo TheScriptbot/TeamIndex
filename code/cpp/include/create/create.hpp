@@ -87,11 +87,6 @@ namespace TeamIndex {
         void process_batch(const py::buffer &batch, IDType first_id) {
 
             py::buffer_info info = batch.request(false);
-            if (info.format != py::format_descriptor<DataType>::format())
-                throw std::runtime_error(
-                        "Incompatible format! Expecting " + py::format_descriptor<DataType>::format() + " but got " +
-                        info.format + " instead!");
-
             /* Some sanity checks ... */
             if (info.ndim != 2)
                 throw std::runtime_error("Incompatible buffer dimension!");
@@ -99,10 +94,29 @@ namespace TeamIndex {
             if (info.shape[0] <= 0 or info.shape[1] != static_cast<ssize_t>(_shape.size()))
                 throw std::runtime_error("Incompatible shape!");
 
-            DataType *data = (DataType *) info.ptr;
-            size_t cols = static_cast<size_t>(info.shape[1]);
-            size_t rows = static_cast<size_t>(info.shape[0]);
+            if (info.format == py::format_descriptor<DataType>::format()) {
+                process_batch_impl<DataType>((DataType *) info.ptr,
+                static_cast<size_t>(info.shape[1]),
+                static_cast<size_t>(info.shape[0]),
+                first_id);
+            }
+            
+            else if (info.format == py::format_descriptor<DataTypeSP>::format()) {
+                process_batch_impl<DataTypeSP>((DataTypeSP *) info.ptr,
+                    static_cast<size_t>(info.shape[1]),
+                    static_cast<size_t>(info.shape[0]),
+                    first_id);
+            }
+            else {
+                throw std::runtime_error(
+                    "Incompatible format! Expecting " + py::format_descriptor<DataType>::format() + " but got " +
+                    info.format + " instead!");
+            }
 
+        }
+
+        template<typename VALUE_TYPE>
+        void process_batch_impl(VALUE_TYPE *data, size_t cols, size_t rows, IDType first_id) {
 
             ////////////////////////////////////////////////////////////////////////////
             /// NOTE: data in "data" is assumed to be in fortran/column-first order! ///
@@ -126,8 +140,8 @@ namespace TeamIndex {
                 /// first two column/innermost term:
                 for (auto row = 0u; row < rows; row++) {
                     size_t &flat_bin_id = bin_ids[row];
-                    flat_bin_id = get_quantile(data[row], 0) * _shape[1];
-                    flat_bin_id += get_quantile(data[1 * rows + row], 1);
+                    flat_bin_id = get_quantile<VALUE_TYPE>(data[row], 0) * _shape[1];
+                    flat_bin_id += get_quantile<VALUE_TYPE>(data[1 * rows + row], 1);
 
                     if (cols == 2) [[unlikely]] { // TODO: move this check to outside of the loop and copy the loop
                         // in case we have only two columns, we won't visit the loop below
@@ -148,7 +162,7 @@ namespace TeamIndex {
                     for (size_t row = 0; row < rows; row++) {
                         size_t &flat_bin_id = bin_ids[row];
                         flat_bin_id *= _shape[col];
-                        flat_bin_id += get_quantile(data[col * rows + row], col);
+                        flat_bin_id += get_quantile<VALUE_TYPE>(data[col * rows + row], col);
 
                         /// use resulting id in last run for an increment operation:
                         current_bc[flat_bin_id] += (col + 1 == cols);
@@ -174,7 +188,7 @@ namespace TeamIndex {
 
                 // simply iterate over all tuples of this batch and add it to the list of the respective bin
                 for (auto row = 0u; row < rows; row++) {
-                    size_t bin_id = get_quantile(data[row], 0);
+                    size_t bin_id = get_quantile<VALUE_TYPE>(data[row], 0);
                     current_bc[bin_id]++; // statistics
                     current_il[bin_id]->push_back(first_id + row); // fill inverted list
                 }
@@ -290,7 +304,7 @@ namespace TeamIndex {
                     continue;
                 }
 
-                assert(not inv_list_ptr->empty());
+                assert(not inv_list_ptr->empty()); // we did create a list, so it should not be empty! Issue with duplicate quantiles?
 
                 // we use double to be sure the buffer for this list is not too small, causing write to unallocated memory
                 // note, that we abort the compression, if it is inefficient, returning the list un-compressed.
@@ -451,8 +465,8 @@ namespace TeamIndex {
          * Due to the low number of quantiles per attribute,
          * this is just a simple scan.
          */
-        [[nodiscard]] inline unsigned
-        get_quantile(const DataType value, const unsigned column) const {
+        template<typename VALUETYPE> unsigned
+        get_quantile(const VALUETYPE value, const unsigned column) const {
 
             auto &bin_edges = _bin_edges[column];
             for (unsigned bin_id = 0; bin_id < _shape[column]; bin_id++) {

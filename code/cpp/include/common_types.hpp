@@ -12,6 +12,7 @@ namespace TeamIndex {
 
     using IDType = std::uint32_t; // type used to represent a single ID in an uncompressed inverted list
     using DataType = double; // type of the data to be indexed.
+    using DataTypeSP = float; // type of the data to be indexed (half precision)
     using BufferType = char; // representation of a single byte in the file-stream that stores a (compressed) TeamIndex
 
     using TeamName = std::string; // internal name for a team; might be different to the one shown to the user

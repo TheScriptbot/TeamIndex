@@ -11,7 +11,7 @@ import matplotlib.colors as mcolors
 from matplotlib.gridspec import GridSpec
 from matplotlib.patches import Rectangle, Patch
 import matplotlib.ticker as ticker
-from matplotlib.ticker import FuncFormatter, LogLocator, LogFormatter
+from matplotlib.ticker import FuncFormatter, LogLocator, LogFormatter, MultipleLocator
 
 import seaborn as sns
 import pandas as pd
@@ -32,17 +32,21 @@ plot_folder = Path("./figures")
 
 plt.rcParams.update({
     "font.family": "serif",
-    "font.size": 8,          # slightly larger base font
+    "font.size": 8,
     "axes.labelsize": 8,
     "legend.fontsize": 6,
     "legend.title_fontsize": 6,
     "lines.linewidth": 1.0,
     "figure.dpi": 300,
+    "mathtext.fontset": "cm",
 })
 
 # Default base colours (one per distinct b)
 base_colors = ["#DDA448", "#476C9B", "#87C38F", "#DA2C38", "#43291F", "#FFD3BA"]
 
+
+# Default base colours (one per distinct b)
+fig_8_colors = ["#DDA448", "#DA2C38", "#476C9B", "gray", "#43291F", "#87C38F"]
 
 
 
@@ -1138,6 +1142,175 @@ def dual_axis_curve_plot(
 
 
 
+def plot_selectivity_runtime(
+    results: pd.DataFrame,
+    *,
+    line_by=list(('s', 'Index')),
+    color_by=("s",),
+    symbol_by=("Index",),
+    order_by="Query Dim., D",
+    y_attribute="Runtime [s]",
+    x_attribute="Query Dim., D",
+    dotted_value=("Any","VA"),
+    zero_filter_attribute="Selectivity",
+    markersize=10,
+    log_y_axis=True,
+    invert_x_axis=False,
+    direction_label=None,
+    x_tick_steps=(5,85,5),
+    color_legend_pos=(0.9, 0.1),
+    target_path=None,
+    figure_size=(3.33, 1.8),
+    ax=None,
+):
+    """
+    Plot runtime vs. query dimensionality.
+
+    - Line *color* is determined by the tuple of columns in `color_by` (default: ("s",)).
+    - Marker *symbol* is determined by the tuple of columns in `symbol_by` (default: ("index",)).
+    - Any remaining differentiating columns (not in color_by or symbol_by) lead to distinct series
+      with their own line style (same color and marker if groups match).
+    - Points within a series are ordered by `order_by` (default: "team_count").
+    - Selectivity = result_cardinality / N. Zero/negative selectivities (or runtimes) are skipped.
+    """
+
+    if ax is None:
+        fig, ax = plt.subplots(figsize=figure_size)
+
+    needed = {y_attribute} | set(color_by) | set(symbol_by) | {order_by}
+    missing = [c for c in needed if c not in results.columns]
+    if missing:
+        raise ValueError(f"Missing required columns: {missing}")
+
+    df = results.copy()
+
+    # For log axes, keep only strictly positive values
+    # if log_y_axis:
+    #     df = df[(df[x_attribute] > 0) & (df[y_attribute] > 0)]
+    if df.empty:
+        raise ValueError("No positive selectivity/runtime rows to plot after filtering.")
+
+    # Build color map over unique color groups
+    color_key_df = df[list(color_by)].drop_duplicates()
+    color_keys = [tuple(row[c] for c in color_by) for _, row in color_key_df.iterrows()]
+
+    # Cycle through colors
+    colors = fig_8_colors * (len(color_keys) // len(fig_8_colors) + 1)
+    color_map = {ck: col for ck, col in zip(color_keys, colors[:len(color_keys)])}
+
+    # Distinct marker per *symbol group*
+    markers = [
+        "^", "+", "s", "*", "D", "P", "X", "v", "<", ">", "h", "x", "1", "2", "3", "4",
+    ]
+    marker_map = {}
+
+    def fmt_key(cols, vals, pfx=""):
+        if not isinstance(vals, tuple):
+            vals = (vals,)
+        return " / ".join(pfx+f"{v}" for c, v in zip(cols, vals))
+
+    # Plot each series line
+    for line_key, sub in df.groupby(list(line_by), sort=False):
+        is_dotted = line_key == dotted_value
+        sub = sub.sort_values(order_by)
+
+        x = sub[x_attribute].to_numpy()
+        y = sub[y_attribute].to_numpy()
+        sel = sub[zero_filter_attribute].to_numpy()
+
+
+        # Color group
+        cg_tuple = tuple(sub[c].iloc[0] for c in color_by)
+        color = color_map[cg_tuple]
+
+        # Marker symbol
+        ## only add marker if attribute value is not equal to the dotted value
+        sg_tuple = tuple(sub[c].iloc[0] for c in symbol_by)
+        if sg_tuple not in marker_map:
+            if is_dotted:
+                marker_map[sg_tuple] = "o"
+            else:
+                marker_map[sg_tuple] = markers[len(marker_map) % len(markers)]
+        marker = marker_map[sg_tuple]
+
+
+        # draw markers
+        for i in range(len(x)):
+            if is_dotted:
+                markersize_ = markersize * 0.75
+                marker = "o"
+                mcolor = "gray"
+            else:
+                mcolor = color
+                markersize_ = markersize
+            ax.plot(x[i:i+1], y[i:i+1], color=mcolor, markersize=markersize_, marker=marker,
+                    linestyle="None", alpha=1.0 if sel[i] != 0 else 0.33)
+
+        # draw segments
+        for i in range(len(x) - 1):
+            # draw dotted line if one of the two points has the dotted value in the respective column
+            if is_dotted:
+                ax.plot(x[i:i+2], y[i:i+2], color="gray", linestyle=":")
+            elif sel[i] == 0 or sel[i+1] == 0:
+                ax.plot(x[i:i+2], y[i:i+2], color="gray", linestyle="--")
+            else:
+                ax.plot(x[i:i+2], y[i:i+2], color=color, linestyle="-")
+
+
+    if log_y_axis:
+        ax.set_yscale("log")
+        ax.yaxis.set_major_formatter(FuncFormatter(lambda x, _: f"{int(x)}"))
+
+    # ax.set_xscale("log")
+    
+    ax.set_xlabel(x_attribute.replace("_", " "))
+    ax.set_ylabel(y_attribute.replace("_", " "))
+
+    xtick_start, xtick_end, tick_stepsize = x_tick_steps
+    ax.xaxis.set_major_locator(MultipleLocator(base=tick_stepsize))
+    # ax.set_xticks(np.arange(xtick_start, xtick_end + 1, tick_stepsize))
+
+    if invert_x_axis:
+        ax.invert_xaxis()
+
+    # Separate legends for colors and symbols
+    color_handles = [plt.Line2D([0], [0], color=col, lw=2) for col in color_map.values()]
+    color_labels = [fmt_key(color_by, ck) for ck in color_map.keys()]
+    legend1 = ax.legend(color_handles, color_labels, title=None, loc="lower right",
+                        bbox_to_anchor=color_legend_pos)# bbox_to_anchor=(1.02, 1), borderaxespad=0)
+    ax.add_artist(legend1)
+
+    symbol_handles = [plt.Line2D([0], [0], color="black", marker=mk, linestyle="None") for mk in marker_map.values()]
+    symbol_labels = [fmt_key(symbol_by, sk, pfx="s=") for sk in marker_map.keys()]
+    ax.legend(symbol_handles, symbol_labels, title=None, loc="upper left")#, bbox_to_anchor=(1.02, 0), borderaxespad=0)
+    
+    # Add annotation pointing right from lower right corner
+    if direction_label is not None:
+        ax.annotate(
+            direction_label,
+            xy=(0.95, 0.05), xycoords="axes fraction",  # a bit inside the lower-right
+            xytext=(-40, 0), textcoords="offset points",
+            ha="right", va="center",
+            arrowprops=dict(arrowstyle="->", lw=1)
+        )
+
+    plt.subplots_adjust(
+        left=0.12,   # space for y-axis label
+        right=0.98,  # close to edge
+        bottom=0.18, # space for x-axis label
+        top=0.98     # close to edge
+    )
+    # ax.tick_params(pad=2)   # default is ~4
+    # ax.xaxis.labelpad = 1
+    # ax.yaxis.labelpad = 1
+
+
+    ## dump figure to pdf:
+    if target_path:
+        plt.savefig(target_path, bbox_inches="tight", pad_inches=0.01)
+
+    return ax
+
 
 ########################### Functions to create specific figures for the paper
 def figure_1(target_path = plot_folder / "figure_1_grid_index.pdf"):
@@ -1178,15 +1351,8 @@ def figure_2_and_3(source_path = data_folder / "plan_optimization_experiment.par
                                  show_means="expand_some")
 
 
-def figure_4(source_path = data_folder / "query_placement_experiment.parquet",
-             target_path = plot_folder / "figure_4_varying_position.pdf"):
-    results = pd.read_parquet(source_path)
-
-    plot_query_placement(results, path=target_path)
-
-
-def figure_5(source_path = data_folder / "volume_optimal_experiment.parquet",
-             target_path = plot_folder / "figure_5_volume_optimal_runtime.pdf"):
+def figure_4(source_path = data_folder / "volume_optimal_experiment.parquet",
+             target_path = plot_folder / "figure_4_volume_optimal_runtime.pdf"):
     result = pd.read_parquet(source_path)
     # result["Total_List_Count_[K]"] = result["Total_List_Count"]/1000
 
@@ -1201,7 +1367,7 @@ def figure_5(source_path = data_folder / "volume_optimal_experiment.parquet",
     )
 
 
-def figure_6_and_7(source_path = data_folder / "composition_variation_experiment.parquet",
+def figure_5_and_6(source_path = data_folder / "composition_variation_experiment.parquet",
                    target_path = plot_folder):
 
     results = pd.read_parquet(source_path)
@@ -1211,21 +1377,21 @@ def figure_6_and_7(source_path = data_folder / "composition_variation_experiment
     pareto_data = results[attr1].groupby(["QueryDescr","b","d","Index"]).mean()
     vol_vs_overhead_data = results[attr2].groupby(["QueryDescr","b","d","Index"]).mean()
 
-    plot_vol_vs_overhead(vol_vs_overhead_data.reset_index(), target_path / "figure_6_vol_vs_overhead.pdf",
+    plot_vol_vs_overhead(vol_vs_overhead_data.reset_index(), target_path / "figure_5_vol_vs_overhead.pdf",
                          x = "Overhead", y = "Volume_[MB]",
                          highlights=[(5,"balanced_selective"), (10,"balanced_selective"), (10,"diverse")],
                          light=0.3,dark=0.9, base_colors = base_colors,
                          figsize=(3.4, 2.5))
 
-    plot_runtime_vs_storage(pareto_data.reset_index(), target_path / "figure_7_pareto.pdf",
+    plot_runtime_vs_storage(pareto_data.reset_index(), target_path / "figure_6_pareto.pdf",
                             x = "Total_Storage_Size_[GB]", y = "Runtime_[ms]",
                             highlights=[(10,"balanced"), (10,"balanced_selective"), (10,"diverse")],
                             light=0.3, dark=0.9, base_colors = base_colors,
                             legend_fontsize=7, figsize=(3.4, 2.5))
 
 
-def figure_8(source_path = data_folder / "dimensional_scaling_experiment.parquet",
-             target_path = plot_folder / "figure_8_dimensional_scaling.pdf"):
+def figure_7(source_path = data_folder / "dimensional_scaling_experiment_LHCb.parquet",
+             target_path = plot_folder / "figure_7_dimensional_scaling_LHCb.pdf"):
     
     N = 1221147850
     dimension_counts = [1, 2, 4,   4+2, 4+4, 2+4+4,   4+4+4, 4+4+4+2, 4+4+4+4]
@@ -1264,6 +1430,19 @@ def figure_8(source_path = data_folder / "dimensional_scaling_experiment.parquet
     )
 
 
+
+
+def figure_8(data_path=data_folder / "SDSS_dimensional_scaling.parquet"):
+    data = pd.read_parquet(data_path)
+    ax = plot_selectivity_runtime(data.groupby(["s","Index","D"]).mean().reset_index(),
+                                    line_by=list(('s', 'Index')), symbol_by=("s",), color_by=("Index",),
+                                    order_by="D", x_attribute="D",
+                                    y_attribute="Runtime [s]",
+                                    figure_size=(3.3,1.8),
+                                    markersize=5,
+                                    color_legend_pos=(0.88,0.066),
+                                    target_path=plot_folder / "figure_8_dimensional_scaling_SDSS.pdf")
+
 def figure_9(source_path = data_folder / "table_scaling_experiment.parquet",
                  target_path = plot_folder / "figure_9_table_scaling.pdf"):
     results = pd.read_parquet(source_path)
@@ -1279,11 +1458,11 @@ def create_all():
     figure_1()
     figure_2_and_3()
     figure_4()
-    figure_5()
-    figure_6_and_7()
+    figure_5_and_6()
+    figure_7()
     figure_8()
     figure_9()
 
-if __name__ == "__main__":
-    create_all()
-    print("All figures created successfully.")
+# if __name__ == "__main__":
+#     create_all()
+#     print("All figures created successfully.")

@@ -44,7 +44,7 @@ int main(int argc, char* argv[]) {
 
     auto [ids, stats] = TeamIndexExecutor::run(request_infos, team_workload_infos, pfg, cfg, storage_cfg);
     
-    if (cfg.return_result and ids.data() == nullptr) {
+    if (cfg.return_result and ids.data() == nullptr and ids.size() != 0) {
         throw std::runtime_error("Result is null, but return_result is set to true!");
     }
     else if (not cfg.return_result and ids.data() != nullptr) {
