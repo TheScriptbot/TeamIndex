@@ -11,7 +11,10 @@ from pathlib import Path
 n = 400_000
 columns = ["A","B","C","D","E","F","G","H","I","J"]
 
-target_path = Path("./uniform_toy_data.parquet")
+
+# note: make sure the data generated here is also used for the index created later, otherwise there will be a missmatch when checking results.
+target_path = Path("./uniform_toy_data.parquet")  # will be roughly ~33MB in size
+
 
 if not target_path.exists():
     table = pd.DataFrame(np.random.uniform(0, 100, n * len(columns)).reshape(n,len(columns)), columns=columns)
@@ -30,6 +33,7 @@ index = eva.TeamIndex("./toy_index.json")
 
 ## Example queries
 # select just the very first cell in one of the Team indices, which spans roughly the interval [[0,19],[0,19],[0,19]]
+# Note: only simple conjunctive WHERE clauses are supported right now
 query1 = "A < 19 and E < 19 and C < 19"
 query2 = "A < 19 and E < 19 and C < 19 and B < 19" # also restricts one attribute of a second Team, leading to index intersection
 query3 = "A < 38 and E < 38 and C < 38 and B < 38 and C < 19" # selects multiple bins per Team for slightly more complex intersection
@@ -54,11 +58,15 @@ print(ref_result_q3.issubset(res3[0]))
 ## Execution of "run_query" can be manually influenced, allowing for optimizations. The current default strategy is very inefficient, a proper optimizer is WIP
 ## The returned object also contains some statistics that can be used by the optimizer, such as access cardinalities.
 ## The object is a list of pairs [(team_name, optimization_options_dictionary)], sorted in ascending order of access volume
-manual_optimizations = index.prepare_optimization(query=query3)
+manual_optimizations = index.prepare_optimization(query=query3)  # TODO: default strategy is still "union first"
 
 ## The following function was used as the default optimization strategy for most experiments:
 
 def optimize(mopts):
+    assert(len(mopts) >= 1), "Empty result?"
+
+    ## "expand" the first Team, i.e., combine each bin/list from the smallest Team's result with every other list (from other Teams)
+    ## Without expansion, every Team's is unified first and intersection happens last, which can be suboptimal
     mopts[0][1]["is_expanded"] = True
     if mopts[0][1]["max_group_count"] > 128:
         mopts[0][1]["group_count"] = eva.po2_near_sqrt(mopts[0][1]["max_group_count"])
@@ -76,3 +84,6 @@ def optimize(mopts):
 res3_optmized = index.run_query(query3, manual_optimizations=optimize(manual_optimizations))
 print("Checking last result, too:")
 print(ref_result_q3.issubset(res3_optmized[0]))
+
+print("You can inspect the index metadata, e.g., the first Team index's 5x5x5-many leaf cardinalities via")
+print("index.cardinalities[\"A-E-C\"].shape")
